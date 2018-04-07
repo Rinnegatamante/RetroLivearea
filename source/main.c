@@ -11,8 +11,10 @@ enum {
 	MAIN_MENU,
 	ICON_SCAN_START,
 	ASSETS_SCAN_START,
+	PATCHED_SCAN_START,
 	RECURSIVE_ICONS,
 	RECURSIVE_ASSETS,
+	RECURSIVE_UNPATCH,
 	RESTART_REQUIRED,
 	EXIT
 };
@@ -210,13 +212,15 @@ int main(){
 				drawLoopText(20,"RetroLivearea v.1.0 by Rinnegatamante",white);
 				drawLoopText(60,"Press Cross to scan for unpatched PSX/PSP icon bubbles.",white);
 				drawLoopText(80,"Press Triangle to scan for unpatched PSX/PSP assets bubbles.",white);
-				drawLoopText(100,"Press Start to exit.",white);
+				drawLoopText(100,"Press Square to scan for patched PSX/PSP bubbles.",white);
+				drawLoopText(120,"Press Start to exit.",white);
 				sceCtrlPeekBufferPositive(0, &pad, 1);
 				vita2d_end_drawing();
 				vita2d_wait_rendering_done();
 				vita2d_swap_buffers();
 				if (pad.buttons & SCE_CTRL_CROSS) state = ICON_SCAN_START;
 				else if (pad.buttons & SCE_CTRL_TRIANGLE) state = ASSETS_SCAN_START;
+				else if (pad.buttons & SCE_CTRL_SQUARE) state = PATCHED_SCAN_START;
 				else if (pad.buttons & SCE_CTRL_START) state = EXIT;
 				break;
 			case ASSETS_SCAN_START:				
@@ -261,6 +265,56 @@ int main(){
 						state = RECURSIVE_ASSETS;
 					}else{
 						drawText(100,"No unpatched bubbles found...",red);
+						drawText(120,"Press Triangle to return to the main menu",white);
+						do{sceCtrlPeekBufferPositive(0, &pad, 1);}while(!(pad.buttons & SCE_CTRL_TRIANGLE));
+						sceKernelDelayThread(500000);
+						state = MAIN_MENU;
+					}
+					
+				}
+				break;
+			case PATCHED_SCAN_START:				
+				clearScreen();
+				bubbles_idx = 0;
+				
+				// Opening app.db for v2 patch
+				drawText(20,"*** Scanning ***",white);
+				drawText(40,"Opening app database",white);
+				fd = sqlite3_open("ur0:/shell/db/app.db", &db);
+				if(fd != SQLITE_OK){
+					char error[512];
+					sprintf(error, "ERROR: Can't open app database: %s", sqlite3_errmsg(db));
+					drawText(60,error,red);
+					drawText(80,"Operation aborted...",white);
+					sceKernelDelayThread(2000000);
+				}else{
+		
+					// Scanning database
+					char query[1024];
+					sprintf(query,"%s","SELECT titleId FROM tbl_livearea WHERE (org_Path LIKE 'ux0:data/RetroLivearea/%')");	
+					drawText(60,"Searching for patched bubbles",white);
+					fd = sqlite3_exec(db, query, scan_callback, NULL, &zErrMsg);
+					if( fd != SQLITE_OK ){
+						char error[512];
+						sprintf(error, "ERROR: SQL error: %s", zErrMsg);
+						sqlite3_free(zErrMsg);
+						drawText(400,error,red);
+					}
+					
+					// Closing app.db
+					drawText(80,"Closing app database",white);
+					sqlite3_close(db);
+					
+					if (bubbles_idx > 0){
+						sprintf(text, "Found %d patched bubbles!", bubbles_idx);
+						drawText(100,text,green);
+						drawText(120,"Press Cross to start the unpatch process",white);
+						do{sceCtrlPeekBufferPositive(0, &pad, 1);}while(!(pad.buttons & SCE_CTRL_CROSS));
+						sceKernelDelayThread(500000);
+						icon_idx = 0;
+						state = RECURSIVE_UNPATCH;
+					}else{
+						drawText(100,"No patched bubbles found...",red);
 						drawText(120,"Press Triangle to return to the main menu",white);
 						do{sceCtrlPeekBufferPositive(0, &pad, 1);}while(!(pad.buttons & SCE_CTRL_TRIANGLE));
 						sceKernelDelayThread(500000);
@@ -613,9 +667,69 @@ int main(){
 							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_bgimg AFTER UPDATE OF background_image ON tbl_livearea WHEN OLD.background_image LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.background_image AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
 							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_gtimg AFTER UPDATE OF gate_startupImage ON tbl_livearea WHEN OLD.gate_startupImage LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.gate_startupImage AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
-							sprintf(query,"UPDATE tbl_appinfo SET val = 'gd' WHERE titleId == '%s' AND key == '566916785'",bubbles[icon_idx],bubbles[icon_idx]);
+							sprintf(query,"UPDATE tbl_appinfo SET val = 'gd' WHERE titleId == '%s' AND key == '566916785'",bubbles[icon_idx]);
 							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							sprintf(query,"UPDATE tbl_appinfo SET val = 'ux0:data/RetroLivearea/%s' WHERE titleId == '%s' AND key == '2630610402'",bubbles[icon_idx],bubbles[icon_idx]);
+							fd = sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
+							if( fd != SQLITE_OK ){
+								char error[512];
+								sprintf(error, "ERROR: SQL error: %s", zErrMsg);
+								sqlite3_free(zErrMsg);
+								drawText(400,error,red);
+								sceKernelDelayThread(2000000);
+							}
+							sqlite3_close(db);
+							
+						}
+						icon_idx++;
+					}
+				
+				}
+					
+				break;
+			case RECURSIVE_UNPATCH:
+				clearScreen();
+				
+				if (icon_idx == bubbles_idx){
+					state = RESTART_REQUIRED;
+				}else{
+					
+					sprintf(text, "*** Unatching bubbles (%d/%d) ***", icon_idx+1, bubbles_idx);
+					drawText(20,text,white);
+					
+					// Extracting icon0.png from eboot.pbp
+					sprintf(text, "ux0:pspemu/PSP/GAME/%s/EBOOT.PBP", bubbles[icon_idx]);
+					vita2d_texture *icon_texture = extractIcon(text);
+					if (icon_texture == NULL){
+						char error[512];
+						sprintf(error, "ERROR: Can't open EBOOT.PBP file for %s.", bubbles[icon_idx]);
+						drawText(60,error,red);
+						sceKernelDelayThread(2000000);
+					}else{
+						drawIcon(700, 30, icon_texture);
+						sprintf(text, "Do you want to unpatch %s bubble?", bubbles[icon_idx]);
+						drawText(40, text, white);
+						drawText(80,"Cross = Yes",white);
+						drawText(100,"Triangle = No",white);
+						do{sceCtrlPeekBufferPositive(0, &pad, 1);}while(!((pad.buttons & SCE_CTRL_TRIANGLE) || (pad.buttons & SCE_CTRL_CROSS)));
+						sceKernelDelayThread(500000);
+						if (pad.buttons & SCE_CTRL_CROSS){
+							
+							
+							// Patching app.db
+							fd = sqlite3_open("ur0:/shell/db/app.db", &db);
+							char query[1024];
+							sprintf(query,"UPDATE tbl_livearea SET style = 'pspemu', org_Path = 'ur0:appmeta/%s/livearea/contents', background_image = 'bg0.png', gate_startupImage = 'startup.png' WHERE titleId == '%s'",bubbles[icon_idx],bubbles[icon_idx]);	
+							sqlite3_exec(db, "DROP TRIGGER tgr_livearea_upd_bgimg", dummy_callback, NULL, &zErrMsg);
+							sqlite3_exec(db, "DROP TRIGGER tgr_livearea_upd_gtimg", dummy_callback, NULL, &zErrMsg);
+							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
+							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_bgimg AFTER UPDATE OF background_image ON tbl_livearea WHEN OLD.background_image LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.background_image AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
+							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_gtimg AFTER UPDATE OF gate_startupImage ON tbl_livearea WHEN OLD.gate_startupImage LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.gate_startupImage AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
+							sprintf(query,"UPDATE tbl_appinfo SET val = 'ME' WHERE titleId == '%s' AND key == '566916785'",bubbles[icon_idx]);
+							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
+							sprintf(query,"UPDATE tbl_appinfo SET val = 'ur0:appmeta/%s/livearea/contents' WHERE titleId == '%s' AND key == '2630610402'",bubbles[icon_idx],bubbles[icon_idx]);
+							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
+							sprintf(query,"UPDATE tbl_appinfo_icon SET icon0Type = '0',iconPath = 'ur0:appmeta/%s/icon0.dds' WHERE titleId == '%s'",bubbles[icon_idx],bubbles[icon_idx]);	
 							fd = sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							if( fd != SQLITE_OK ){
 								char error[512];
