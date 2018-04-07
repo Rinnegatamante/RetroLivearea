@@ -237,7 +237,7 @@ int main(){
 		
 					// Scanning database
 					char query[1024];
-					sprintf(query,"%s","SELECT titleId FROM tbl_livearea WHERE (style == 'ps1emu' or style == 'pspemu')");	
+					sprintf(query,"%s","SELECT titleId FROM tbl_livearea WHERE (style == 'ps1emu' or style == 'pspemu' AND titleId NOT LIKE 'PSPEMU%')");	
 					drawText(60,"Searching for unpatched bubbles",white);
 					fd = sqlite3_exec(db, query, scan_callback, NULL, &zErrMsg);
 					if( fd != SQLITE_OK ){
