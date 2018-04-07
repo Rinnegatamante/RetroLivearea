@@ -613,6 +613,8 @@ int main(){
 							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_bgimg AFTER UPDATE OF background_image ON tbl_livearea WHEN OLD.background_image LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.background_image AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
 							sqlite3_exec(db, "CREATE TRIGGER tgr_livearea_upd_gtimg AFTER UPDATE OF gate_startupImage ON tbl_livearea WHEN OLD.gate_startupImage LIKE ' %' BEGIN UPDATE tbl_livearea_file SET refcnt=refcnt-1 WHERE rowid=CAST(OLD.gate_startupImage AS INTEGER);END", dummy_callback, NULL, &zErrMsg);
+							sprintf(query,"UPDATE tbl_appinfo SET val = 'gd' WHERE titleId == '%s' AND key == '566916785'",bubbles[icon_idx],bubbles[icon_idx]);
+							sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							sprintf(query,"UPDATE tbl_appinfo SET val = 'ux0:data/RetroLivearea/%s' WHERE titleId == '%s' AND key == '2630610402'",bubbles[icon_idx],bubbles[icon_idx]);
 							fd = sqlite3_exec(db, query, dummy_callback, NULL, &zErrMsg);
 							if( fd != SQLITE_OK ){
