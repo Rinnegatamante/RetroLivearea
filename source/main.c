@@ -214,6 +214,10 @@ int main(){
 				drawLoopText(80,"Press Triangle to scan for unpatched PSX/PSP assets bubbles.",white);
 				drawLoopText(100,"Press Square to scan for patched PSX/PSP bubbles.",white);
 				drawLoopText(120,"Press Start to exit.",white);
+				drawLoopText(400,"Thanks to my Patroners for their awesome support:",white);
+				drawLoopText(420,"Billy McLaughlin II",white);
+				drawLoopText(440,"Styde Pregny",white);
+				drawLoopText(460,"XandridFire",white);
 				sceCtrlPeekBufferPositive(0, &pad, 1);
 				vita2d_end_drawing();
 				vita2d_wait_rendering_done();
